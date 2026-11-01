@@ -1,0 +1,66 @@
+'use strict';
+const http=require('http'), fs=require('fs'),path=require('path'),crypto=require('crypto');
+const ROOT=__dirname, PUBLIC=path.join(ROOT,'public'), DATA=process.env.DATA_DIR||path.join(ROOT,'data'), DB=path.join(DATA,'db.json');
+fs.mkdirSync(DATA,{recursive:true});
+const PORT=Number(process.env.PORT||3000),HOST=process.env.HOST||'0.0.0.0';
+const TEACHER_CODE=process.env.TEACHER_INVITE_CODE||'';
+if(!TEACHER_CODE) console.warn('ЕСКЕРТУ: TEACHER_INVITE_CODE орнатылмаған, мұғалім тіркелуі өшірулі.');
+const TASKS=[
+{level:1,subject:'Дүниетану',title:'Қазақстанның астанасы',question:'Қазақстанның астанасы қай қала?',ai:'Қазақстанның астанасы — Алматы.',correct:false,source:'Қазақстанның астанасы — Астана.',explanation:'Алматы бұрын астана болған, қазіргі астана — Астана.',options:['Алматы','Астана','Шымкент'],answer:1},
+{level:1,subject:'Математика',title:'Көбейту амалы',question:'8 × 7 нешеге тең?',ai:'8 × 7 = 54.',correct:false,source:'8 × 7 = 56.',explanation:'8-ді 7 рет қоссақ 56 шығады.',options:['54','56','64'],answer:1},
+{level:1,subject:'Жаратылыстану',title:'Жыл мезгілдері',question:'Бір жылда қанша жыл мезгілі бар?',ai:'Бір жылда төрт мезгіл бар: қыс, көктем, жаз, күз.',correct:true,source:'Бір жылда төрт жыл мезгілі болады.',explanation:'ЖИ жауабы толық әрі дұрыс.',options:['Төрт','Үш','Бес'],answer:0},
+{level:1,subject:'Қазақ тілі',title:'Зат есімді анықта',question:'«Кітап» сөзі қай сөз табына жатады?',ai:'«Кітап» — етістік.',correct:false,source:'Заттың атын білдіретін сөздер зат есім болады.',explanation:'Кітап — заттың атауы, сондықтан зат есім.',options:['Етістік','Сын есім','Зат есім'],answer:2},
+{level:1,subject:'Дүниетану',title:'Мемлекеттік рәміз',question:'Қазақстанның мемлекеттік рәміздеріне не кіреді?',ai:'Қазақстанның мемлекеттік рәміздері: Ту, Елтаңба және Әнұран.',correct:true,source:'ҚР мемлекеттік рәміздері — Мемлекеттік Ту, Мемлекеттік Елтаңба, Мемлекеттік Әнұран.',explanation:'Үш мемлекеттік рәміз аталған.',options:['Ту, Елтаңба, Әнұран','Ту, карта, ақша','Елтаңба, теңге, кітап'],answer:0},
+{level:2,subject:'Жаратылыстану',title:'Өсімдіктің өсуі',question:'Өсімдіктің өсуіне қандай жағдайлар қажет?',ai:'Өсімдікке тек су керек, жарық пен ауа қажет емес.',correct:false,source:'Өсімдіктердің өсуіне су, ауа, жарық, қолайлы температура және қоректік заттар қажет.',explanation:'Су ғана жеткіліксіз. Басқа жағдайлар да маңызды.',options:['Тек су','Су, ауа, жарық және қолайлы орта','Тек жарық'],answer:1},
+{level:2,subject:'Математика',title:'Бөлу тәсілі',question:'48 санын 6-ға бөлгенде не шығады?',ai:'48 : 6 = 8, себебі 6 × 8 = 48.',correct:true,source:'Көбейту арқылы тексеру: 6 × 8 = 48.',explanation:'ЖИ дұрыс қорытынды мен дәлел келтірген.',options:['6','8','9'],answer:1},
+{level:2,subject:'Дүниетану',title:'Күн мен түн',question:'Күн мен түннің ауысу себебі қандай?',ai:'Күн мен түн Жердің Күнді айналуынан ауысады.',correct:false,source:'Күн мен түн Жердің өз осінен айналуы нәтижесінде ауысады.',explanation:'Жердің Күнді айналуы жылмен байланысты, ал өз осінен айналуы күн мен түнді тудырады.',options:['Жердің өз осінен айналуы','Жердің Күнді айналуы','Айдың айналуы'],answer:0},
+{level:2,subject:'Қазақ тілі',title:'Сөйлем түрі',question:'«Сен бүгін кітап оқыдың ба?» сөйлемі қандай?',ai:'Бұл — сұраулы сөйлем, себебі сұрақ мағынасын білдіреді.',correct:true,source:'Сұраулы сөйлем бір нәрсе жайында сұрау мақсатында айтылады.',explanation:'ЖИ сөйлем түрін дұрыс анықтаған.',options:['Хабарлы','Сұраулы','Лепті'],answer:1},
+{level:2,subject:'Жаратылыстану',title:'Судың күйі',question:'Су қандай күйлерде болады?',ai:'Су тек сұйық және қатты күйде болады.',correct:false,source:'Судың үш күйі бар: қатты (мұз), сұйық (су), газ (бу).',explanation:'ЖИ бу түріндегі газ күйін ұмытып кеткен.',options:['Екі күй','Үш күй','Бір күй'],answer:1},
+{level:3,subject:'Жаратылыстану',title:'Магнит туралы қорытынды',question:'Магнит барлық затты тарта ма?',ai:'Магнит шегені тартты. Демек, барлық металл заттарды тартады.',correct:false,source:'Магнит темір, никель, кобальт сияқты кейбір металдарға әсер етеді; барлық металлға бірдей әсер етпейді.',explanation:'Бір шегеге сүйеніп барлық металл туралы қорытынды жасау қате.',options:['Бір мысал барлық металға дәлел емес','Иә, барлық металды тартады','Магнит ештеңе тартпайды'],answer:0},
+{level:3,subject:'Дүниетану',title:'Дерек пен болжам',question:'Ауа райын болжауды қалай тексереміз?',ai:'Ертең жаңбыр жауады, өйткені бүгін аспанда бұлт болды. Бұл міндетті түрде орындалады.',correct:false,source:'Бір ғана белгіге сүйеніп нақты кепіл беруге болмайды. Ауа райы болжамы бірнеше бақылау мен өлшемге сүйенеді.',explanation:'Бұлт жаңбыр болуы мүмкін екенін білдіреді, бірақ міндетті дәлел емес.',options:['Болжамды әртүрлі ауа райы деректерімен тексеру','Тек бұлтқа сену','Кез келген болжам 100% дұрыс'],answer:0},
+{level:3,subject:'Математика',title:'Есеп шешімін тексер',question:'Бір қорапта 6 қарындаш бар. 4 қорапта қанша?',ai:'4 қорапта 24 қарындаш бар: 6 × 4 = 24.',correct:true,source:'6 + 6 + 6 + 6 = 24 немесе 6 × 4 = 24.',explanation:'ЖИ шешімі дұрыс; қосу арқылы да тексеріледі.',options:['18','24','26'],answer:1},
+{level:3,subject:'Қазақ тілі',title:'Жалпылауды сына',question:'Бір оқушы қате жазды. Одан қандай тұжырым жасауға болады?',ai:'Бір оқушы қате жазғандықтан, осы сыныптың барлық оқушысы сауатсыз.',correct:false,source:'Бір адамның нәтижесі бүкіл сыныпқа қатысты дәлел бола алмайды.',explanation:'ЖИ бір мысалдан жалпылама тұжырым жасаған.',options:['Барлығына қорытынды жасамау','ЖИ-ге сене беру','Бүкіл сыныпты бағалау'],answer:0},
+{level:3,subject:'Жаратылыстану',title:'Тәжірибені бағала',question:'Екі өсімдіктің біреуін қараңғыға қойдық. Нені тексеріп жатырмыз?',ai:'Өсімдіктерге жарықтың әсерін зерттеу үшін қалған жағдайларды барынша бірдей ұстау керек.',correct:true,source:'Әділ тәжірибеде бір ғана зерттелетін шарт өзгертіледі.',explanation:'ЖИ әділ тәжірибенің негізгі қағидасын дұрыс көрсетті.',options:['Барлық шартты өзгерту','Жарықтан басқа жағдайларды бірдей ұстау','Суды да ауыстыру'],answer:1}
+];
+let db;try{db=JSON.parse(fs.readFileSync(DB,'utf8'));}catch{db={users:[],sessions:[],attempts:[],tasks:TASKS};}
+if(!Array.isArray(db.tasks)||!db.tasks.length)db.tasks=TASKS;
+function save(){const tmp=DB+'.tmp';fs.writeFileSync(tmp,JSON.stringify(db,null,2),{mode:0o600});fs.renameSync(tmp,DB)}
+save();
+function reply(res,status,payload){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(payload))}
+function parseCookies(s=''){return Object.fromEntries(s.split(';').map(x=>x.trim().split('=')).filter(x=>x.length===2))}
+function hash(p,salt){return crypto.scryptSync(p,salt,64).toString('hex')}
+function auth(req){const token=parseCookies(req.headers.cookie).sid; if(!token)return null;const digest=crypto.createHash('sha256').update(token).digest('hex');const session=db.sessions.find(x=>x.hash===digest&&x.exp>Date.now());return session&&db.users.find(u=>u.id===session.uid)}
+function cookie(res,value,maxAge){res.setHeader('Set-Cookie',`sid=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}${process.env.COOKIE_SECURE==='true'?'; Secure':''}`)}
+function login(res,u){const token=crypto.randomBytes(32).toString('hex');db.sessions.push({uid:u.id,hash:crypto.createHash('sha256').update(token).digest('hex'),exp:Date.now()+7*86400000});cookie(res,token,604800);save()}
+function publicUser(u){return {id:u.id,username:u.username,role:u.role,created:u.created}}
+async function body(req){let str='';for await(const c of req){str+=c;if(str.length>100000)throw Error('Өте үлкен сұрау')}return JSON.parse(str||'{}')}
+function validName(n){return /^[a-zA-Zа-яА-ЯәіңғүұқөһӘІҢҒҮҰҚӨҺ0-9_.-]{3,24}$/.test(n)}
+async function api(req,res,url){let u=auth(req),p=url.pathname;
+try{
+if(p==='/api/register'&&req.method==='POST'){
+const x=await body(req), username=String(x.username||'').trim(),pass=String(x.password||''),role=x.role==='teacher'?'teacher':'student';
+if(!validName(username))return reply(res,400,{error:'Лақап ат 3–24 таңба болуы керек (әріптер, сандар, _, -, .).'});
+if(pass.length<10||pass.length>128)return reply(res,400,{error:'Құпиясөз кемінде 10 таңбадан тұруы керек.'});
+if(db.users.some(y=>y.username.toLowerCase()===username.toLowerCase()))return reply(res,409,{error:'Бұл лақап ат бос емес.'});
+if(role==='teacher'&&(!TEACHER_CODE||String(x.invite||'')!==TEACHER_CODE))return reply(res,403,{error:'Мұғалім коды қате немесе бапталмаған.'});
+const salt=crypto.randomBytes(16).toString('hex');const nu={id:crypto.randomUUID(),username,role,salt,hash:hash(pass,salt),created:new Date().toISOString()};db.users.push(nu);login(res,nu);return reply(res,201,{user:publicUser(nu)})}
+if(p==='/api/login'&&req.method==='POST'){
+const x=await body(req),name=String(x.username||'').trim().toLowerCase(),pass=String(x.password||'');let found=db.users.find(z=>z.username.toLowerCase()===name);
+const h=hash(pass.slice(0,128),found?.salt||'00000000000000000000000000000000');if(!found||!crypto.timingSafeEqual(Buffer.from(h,'hex'),Buffer.from(found.hash,'hex')))return reply(res,401,{error:'Лақап ат немесе құпиясөз дұрыс емес.'});login(res,found);return reply(res,200,{user:publicUser(found)})}
+if(p==='/api/logout'&&req.method==='POST'){const sid=parseCookies(req.headers.cookie).sid;if(sid){let h=crypto.createHash('sha256').update(sid).digest('hex');db.sessions=db.sessions.filter(x=>x.hash!==h)}cookie(res,'',0);save();return reply(res,200,{ok:true})}
+if(p==='/api/me')return reply(res,200,{user:u?publicUser(u):null});
+if(!u)return reply(res,401,{error:'Алдымен жүйеге кіріңіз.'});
+if(p==='/api/tasks'&&req.method==='GET'){const level=Number(url.searchParams.get('level')||1);return reply(res,200,{tasks:db.tasks.filter(t=>t.level===level).map((t,i)=>({id:db.tasks.indexOf(t),level:t.level,subject:t.subject,title:t.title,question:t.question,ai:t.ai,options:t.options,source:t.source}))})}
+if(p==='/api/submit'&&req.method==='POST'){
+if(u.role!=='student')return reply(res,403,{error:'Бұл тапсырманы оқушы орындайды.'});const x=await body(req),t=db.tasks[Number(x.taskId)];if(!t)return reply(res,404,{error:'Тапсырма табылмады.'});
+if(typeof x.judgement!=='boolean'||!Number.isInteger(x.answer)||x.answer<0||x.answer>=t.options.length)return reply(res,400,{error:'Жауапты толық таңдаңыз.'});
+const explanation=String(x.reason||'').trim().slice(0,500);let points=(x.judgement===t.correct?1:0)+(x.answer===t.answer?1:0);
+const a={id:crypto.randomUUID(),uid:u.id,taskId:Number(x.taskId),judgement:x.judgement,answer:x.answer,reason:explanation,points,max:2,time:new Date().toISOString()};db.attempts.push(a);save();return reply(res,200,{points,max:2,correct:t.correct,correctOption:t.options[t.answer],explanation:t.explanation,source:t.source,reasonNote:'Дәлеліңді мұғалім бағалай алады.'})}
+if(p==='/api/results'&&req.method==='GET'){const attempts=db.attempts.filter(a=>a.uid===u.id);return reply(res,200,{attempts,levels:[1,2,3].map(l=>{const arr=attempts.filter(a=>db.tasks[a.taskId]?.level===l);return {level:l,count:arr.length,points:arr.reduce((s,a)=>s+a.points,0),max:arr.length*2}})})}
+if(p==='/api/teacher'&&req.method==='GET'){if(u.role!=='teacher')return reply(res,403,{error:'Мұғалім рөлі қажет.'});const students=db.users.filter(a=>a.role==='student');return reply(res,200,{students:students.map(s=>{const att=db.attempts.filter(a=>a.uid===s.id);return {username:s.username,id:s.id,count:att.length,points:att.reduce((v,a)=>v+a.points,0),max:att.length*2,created:s.created}}),totalAttempts:db.attempts.length})}
+if(p==='/api/teacher/attempts'&&req.method==='GET'){if(u.role!=='teacher')return reply(res,403,{error:'Мұғалім рөлі қажет.'});const id=url.searchParams.get('student');const student=db.users.find(x=>x.id===id&&x.role==='student');if(!student)return reply(res,404,{error:'Оқушы табылмады.'});return reply(res,200,{student:publicUser(student),attempts:db.attempts.filter(a=>a.uid===id).map(a=>({...a,task:db.tasks[a.taskId]?.title,level:db.tasks[a.taskId]?.level}))})}
+return reply(res,404,{error:'Бет табылмады.'})
+}catch(e){console.error(e);return reply(res,400,{error:'Сұрауды өңдеу мүмкін болмады.'})}}
+const TYPES={'.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};
+const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://localhost');if(url.pathname.startsWith('/api/'))return api(req,res,url);if(req.method!=='GET')return reply(res,405,{error:'Әдіс қолжетімсіз'});const file=path.resolve(PUBLIC,'.'+(url.pathname==='/'?'/index.html':url.pathname));if(!file.startsWith(PUBLIC+path.sep))return reply(res,403,{error:'Тыйым салынған'});fs.readFile(file,(err,data)=>{if(err){res.writeHead(404);return res.end('404')}res.writeHead(200,{'Content-Type':TYPES[path.extname(file)]||'application/octet-stream','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'"});res.end(data)})});
+server.listen(PORT,HOST,()=>console.log(`ЖИ детективі: http://${HOST}:${PORT}`));
